@@ -26,7 +26,7 @@ pipeline {
         // STAGE 1: BUILD SERVER
         stage('Build Docker Image') {
             agent {
-                label 'build-server'
+                label 'build-agent'
             }
 
             steps {
@@ -45,7 +45,7 @@ pipeline {
         // STAGE 2: PUSH IMAGE TO DOCKER HUB
         stage('Push Image to Docker Hub') {
             agent {
-                label 'build-server'
+                label 'build-agent'
             }
 
             steps {
@@ -72,7 +72,7 @@ pipeline {
         // STAGE 3: DEPLOYMENT SERVER
         stage('Deploy Application') {
             agent {
-                label 'built-in'
+                label 'deploy-agent'
             }
 
             steps {
@@ -113,7 +113,7 @@ pipeline {
         // STAGE 4: VERIFY
         stage('Verify Deployment') {
             agent {
-                label 'built-in'
+                label 'deploy-agent'
             }
 
             steps {
