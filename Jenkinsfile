@@ -15,7 +15,7 @@ pipeline {
         DEPLOY_SERVER_USER = 'ubuntu'
 
         // Jenkins credentials IDs
-        DOCKER_CREDENTIALS = 'dockerhub-credentials'
+        DOCKER_CREDENTIALS = 'dockerhub'
         SSH_CREDENTIALS = 'deployment-server-ssh'
 
         CONTAINER_NAME = 'company-website'
@@ -51,9 +51,9 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: 'dockerhub-credentials',
-                        usernameVariable: 'creds',
-                        passwordVariable: '1234'
+                        credentialsId: 'dockerhub',
+                        usernameVariable: 'sawhant',
+                        passwordVariable: 'DOCKER_PASS'
                     )
                 ]) {
                     sh '''
