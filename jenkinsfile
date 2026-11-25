@@ -1,160 +1,135 @@
-def deployToServer(String command) {
-    withCredentials([
-        sshUserPrivateKey(
-            credentialsId: 'deployment-server-ssh',
-            keyFileVariable: 'SSH_KEY',
-            usernameVariable: 'SSH_USER'
-        )
-    ]) {
-        sh """
-            ssh -i "\$SSH_KEY" \
-            -o StrictHostKeyChecking=accept-new \
-            "\$SSH_USER@${env.DEPLOYMENT_SERVER_IP}" \
-            '${command}'
-        """
-    }
-}
-
 pipeline {
     agent none
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     environment {
+        // Docker Hub details
         DOCKERHUB_USERNAME = 'YOUR_DOCKERHUB_USERNAME'
         DOCKERHUB_REPOSITORY = 'company-website'
-        DOCKERHUB_CREDENTIAL_ID = 'dockerhub-credentials'
-
-        GITHUB_REPOSITORY_URL = 'https://github.com/YOUR-USERNAME/company-website.git'
-
-        DEPLOYMENT_SERVER_IP = 'YOUR_DEPLOYMENT_PRIVATE_IP'
-
         IMAGE_NAME = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPOSITORY}"
+
+        // GitHub repository
+        GITHUB_REPO = 'https://github.com/YOUR-USERNAME/company-website.git'
+
+        // Deployment server
+        DEPLOY_SERVER_IP = 'YOUR_DEPLOYMENT_SERVER_PRIVATE_IP'
+        DEPLOY_SERVER_USER = 'ubuntu'
+
+        // Jenkins credentials IDs
+        DOCKER_CREDENTIALS = 'dockerhub-credentials'
+        SSH_CREDENTIALS = 'deployment-server-ssh'
+
         CONTAINER_NAME = 'company-website'
     }
 
     stages {
 
-        stage('Build and Push Docker Image') {
-
+        // STAGE 1: BUILD SERVER
+        stage('Build Docker Image') {
             agent {
                 label 'build-server'
             }
 
-            stages {
+            steps {
+                echo 'Building image on Build Server'
 
-                stage('Checkout Code') {
-                    steps {
-                        git branch: 'main',
-                            url: "${GITHUB_REPOSITORY_URL}"
-                    }
-                }
+                git branch: 'main',
+                    url: "${GITHUB_REPO}"
 
-                stage('Build Docker Image') {
-                    steps {
-                        sh '''
-                            docker build \
-                            -t $IMAGE_NAME:$BUILD_NUMBER \
-                            -t $IMAGE_NAME:latest .
-                        '''
-                    }
-                }
+                sh '''
+                    docker build -t $IMAGE_NAME:$BUILD_NUMBER .
+                    docker tag $IMAGE_NAME:$BUILD_NUMBER $IMAGE_NAME:latest
+                '''
+            }
+        }
 
-                stage('Docker Hub Login') {
-                    steps {
-                        withCredentials([
-                            usernamePassword(
-                                credentialsId: 'dockerhub-credentials',
-                                usernameVariable: 'DH_USER',
-                                passwordVariable: 'DH_PASS'
-                            )
-                        ]) {
-                            sh '''
-                                echo "$DH_PASS" | docker login \
-                                -u "$DH_USER" --password-stdin
-                            '''
-                        }
-                    }
-                }
+        // STAGE 2: PUSH IMAGE TO DOCKER HUB
+        stage('Push Image to Docker Hub') {
+            agent {
+                label 'build-server'
+            }
 
-                stage('Push Docker Image') {
-                    steps {
-                        sh '''
-                            docker push $IMAGE_NAME:$BUILD_NUMBER
-                            docker push $IMAGE_NAME:latest
-                        '''
-                    }
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub-credentials',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_PASS'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DH_PASS" | docker login \
+                        -u "$DH_USER" --password-stdin
 
-                    post {
-                        always {
-                            sh 'docker logout'
-                        }
-                    }
+                        docker push $IMAGE_NAME:$BUILD_NUMBER
+                        docker push $IMAGE_NAME:latest
+
+                        docker logout
+                    '''
                 }
             }
         }
 
+        // STAGE 3: DEPLOYMENT SERVER
         stage('Deploy Application') {
-
             agent {
                 label 'built-in'
             }
 
-            stages {
+            steps {
+                echo 'Deploying application on separate Deployment Server'
 
-                stage('Connect to Deployment Server') {
-                    steps {
-                        script {
-                            deployToServer('hostname && docker --version')
-                        }
-                    }
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'deployment-server-ssh',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        ssh -i "$SSH_KEY" \
+                        -o StrictHostKeyChecking=accept-new \
+                        "$SSH_USER@$DEPLOY_SERVER_IP" \
+                        "docker pull $IMAGE_NAME:latest"
+
+                        ssh -i "$SSH_KEY" \
+                        -o StrictHostKeyChecking=accept-new \
+                        "$SSH_USER@$DEPLOY_SERVER_IP" \
+                        "docker stop $CONTAINER_NAME || true"
+
+                        ssh -i "$SSH_KEY" \
+                        -o StrictHostKeyChecking=accept-new \
+                        "$SSH_USER@$DEPLOY_SERVER_IP" \
+                        "docker rm $CONTAINER_NAME || true"
+
+                        ssh -i "$SSH_KEY" \
+                        -o StrictHostKeyChecking=accept-new \
+                        "$SSH_USER@$DEPLOY_SERVER_IP" \
+                        "docker run -d --name $CONTAINER_NAME --restart unless-stopped -p 9090:80 $IMAGE_NAME:latest"
+                    '''
                 }
+            }
+        }
 
-                stage('Pull Docker Image') {
-                    steps {
-                        script {
-                            deployToServer("docker pull ${IMAGE_NAME}:latest")
-                        }
-                    }
-                }
+        // STAGE 4: VERIFY
+        stage('Verify Deployment') {
+            agent {
+                label 'built-in'
+            }
 
-                stage('Remove Old Container') {
-                    steps {
-                        script {
-                            deployToServer(
-                                "docker stop ${CONTAINER_NAME} || true"
-                            )
-                            deployToServer(
-                                "docker rm ${CONTAINER_NAME} || true"
-                            )
-                        }
-                    }
-                }
-
-                stage('Run New Container') {
-                    steps {
-                        script {
-                            deployToServer(
-                                "docker run -d --name ${CONTAINER_NAME} " +
-                                "--restart unless-stopped " +
-                                "-p 9090:80 ${IMAGE_NAME}:latest"
-                            )
-                        }
-                    }
-                }
-
-                stage('Verify Deployment') {
-                    steps {
-                        script {
-                            deployToServer(
-                                "sleep 3 && docker ps --filter name=${CONTAINER_NAME} " +
-                                "&& curl -fsS http://localhost:9090 " +
-                                "&& echo Website is running"
-                            )
-                        }
-                    }
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'deployment-server-ssh',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )
+                ]) {
+                    sh '''
+                        ssh -i "$SSH_KEY" \
+                        -o StrictHostKeyChecking=accept-new \
+                        "$SSH_USER@$DEPLOY_SERVER_IP" \
+                        "docker ps"
+                    '''
                 }
             }
         }
@@ -162,7 +137,7 @@ pipeline {
 
     post {
         success {
-            echo 'SUCCESS: Website built and deployed!'
+            echo 'SUCCESS: Docker image built and deployed on separate servers!'
         }
 
         failure {
