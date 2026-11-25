@@ -3,15 +3,15 @@ pipeline {
 
     environment {
         // Docker Hub details
-        DOCKERHUB_USERNAME = 'YOUR_DOCKERHUB_USERNAME'
+        DOCKERHUB_USERNAME = 'sawhant'
         DOCKERHUB_REPOSITORY = 'company-website'
         IMAGE_NAME = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPOSITORY}"
 
         // GitHub repository
-        GITHUB_REPO = 'https://github.com/YOUR-USERNAME/company-website.git'
+        GITHUB_REPO = 'https://github.com/sawhan-t/company-website.git'
 
         // Deployment server
-        DEPLOY_SERVER_IP = 'YOUR_DEPLOYMENT_SERVER_PRIVATE_IP'
+        DEPLOY_SERVER_IP = '172.31.14.166'
         DEPLOY_SERVER_USER = 'ubuntu'
 
         // Jenkins credentials IDs
@@ -52,8 +52,8 @@ pipeline {
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'dockerhub-credentials',
-                        usernameVariable: 'DH_USER',
-                        passwordVariable: 'DH_PASS'
+                        usernameVariable: 'creds',
+                        passwordVariable: '1234'
                     )
                 ]) {
                     sh '''
@@ -82,7 +82,7 @@ pipeline {
                     sshUserPrivateKey(
                         credentialsId: 'deployment-server-ssh',
                         keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
+                        usernameVariable: 'ssh-key'
                     )
                 ]) {
                     sh '''
@@ -121,7 +121,7 @@ pipeline {
                     sshUserPrivateKey(
                         credentialsId: 'deployment-server-ssh',
                         keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
+                        usernameVariable: 'ssh-key'
                     )
                 ]) {
                     sh '''
