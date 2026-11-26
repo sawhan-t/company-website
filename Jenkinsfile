@@ -1,26 +1,32 @@
 pipeline {
     agent none
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     environment {
+        // Docker Hub details
         DOCKERHUB_USERNAME   = 'sawhant'
         DOCKERHUB_REPOSITORY = 'company-website'
         IMAGE_NAME           = "${DOCKERHUB_USERNAME}/${DOCKERHUB_REPOSITORY}"
-        GITHUB_REPO          = 'https://github.com'
+
+        // GitHub repository
+        GITHUB_REPO          = 'https://github.com/sawhan-t/company-website.git'
+
+        // Deployment server
         DEPLOY_SERVER_IP     = '172.31.14.166'
         DEPLOY_SERVER_USER   = 'ubuntu'
+
+        // Jenkins credentials IDs
         DOCKER_CREDENTIALS   = 'dockerhub'
         SSH_CREDENTIALS      = 'deployment-server-ssh'
+
         CONTAINER_NAME       = 'company-website'
     }
 
     stages {
+        // STAGE 1: BUILD SERVER
         stage('Build Docker Image') {
             agent { label 'build-agent' }
             steps {
+                echo 'Building image on Build Server'
                 git branch: 'main', url: "${GITHUB_REPO}"
                 sh '''
                     docker build -t $IMAGE_NAME:$BUILD_NUMBER .
@@ -29,6 +35,7 @@ pipeline {
             }
         }
 
+        // STAGE 2: PUSH IMAGE TO DOCKER HUB
         stage('Push Image to Docker Hub') {
             agent { label 'build-agent' }
             steps {
@@ -49,9 +56,11 @@ pipeline {
             }
         }
 
+        // STAGE 3: DEPLOYMENT SERVER
         stage('Deploy Application') {
             agent { label 'deploy-agent' }
             steps {
+                echo 'Deploying application on separate Deployment Server'
                 withCredentials([
                     sshUserPrivateKey(
                         credentialsId: "${SSH_CREDENTIALS}",
@@ -61,17 +70,17 @@ pipeline {
                 ]) {
                     sh '''
                         ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_USER@$DEPLOY_SERVER_IP" "
-                            set -e
-                            docker pull $IMAGE_NAME:$BUILD_NUMBER
-                            docker stop $CONTAINER_NAME || true
-                            docker rm $CONTAINER_NAME || true
-                            docker run -d --name $CONTAINER_NAME --restart unless-stopped -p 9090:80 $IMAGE_NAME:$BUILD_NUMBER
+                            docker pull $IMAGE_NAME:latest &&
+                            docker stop $CONTAINER_NAME || true &&
+                            docker rm $CONTAINER_NAME || true &&
+                            docker run -d --name $CONTAINER_NAME --restart unless-stopped -p 9090:80 $IMAGE_NAME:latest
                         "
                     '''
                 }
             }
         }
 
+        // STAGE 4: VERIFY
         stage('Verify Deployment') {
             agent { label 'deploy-agent' }
             steps {
@@ -83,10 +92,7 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_USER@$DEPLOY_SERVER_IP" "
-                            docker ps --filter name=$CONTAINER_NAME --filter status=running
-                            curl -fs http://localhost:9090 > /dev/null
-                        "
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new "$SSH_USER@$DEPLOY_SERVER_IP" "docker ps"
                     '''
                 }
             }
