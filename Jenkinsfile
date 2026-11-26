@@ -11,7 +11,7 @@ pipeline {
         GITHUB_REPO          = 'https://github.com/sawhan-t/company-website.git'
 
         // Deployment server
-        DEPLOY_SERVER_IP     = '172.31.14.166'
+        DEPLOY_SERVER_IP     = '15.252.97.242'
         DEPLOY_SERVER_USER   = 'ubuntu'
 
         // Jenkins credentials IDs
